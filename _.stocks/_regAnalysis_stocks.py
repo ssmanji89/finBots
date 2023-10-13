@@ -45,7 +45,7 @@ from google.oauth2.service_account import Credentials
 scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/spreadsheets','https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/drive']
 
 credentials = Credentials.from_service_account_file(
-    'botstuff-updates-4ec25eeb72fe.json',
+    '/botStuff/botstuff.json',
     scopes=scope
 )
 
