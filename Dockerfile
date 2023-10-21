@@ -12,11 +12,11 @@ COPY . /botStuff/
 
 WORKDIR /botStuff
 COPY botstuff.json /botStuff/botstuff.json
-RUN pip install --no-cache-dir --no-input --disable-pip-version-check -r requirements.txt 
+RUN pip install --no-cache-dir --no-input --disable-pip-version-check -e
 
 ARG curUser
 ARG curPass
 ARG curTotp
-ENTRYPOINT ["python3", "/botStuff/_.stocks/_regAnalysis_stocks.py"] 
+ENTRYPOINT ["python3", "/botStuff/_stocks.py"] 
 
 # docker build --no-cache -t stocks_botstuff_org .; docker run -d -e curUser='ssman@gmail.com' -e curPass='!!@#%^*' -e curTotp='V' stocks_botstuff_org
