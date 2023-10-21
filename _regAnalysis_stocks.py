@@ -1,60 +1,73 @@
-#!
-#/bash 
-# Set the default encoding to UTF-8
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
-
-
+# Import libraries
+import os
+import time
+import random
+import logging
+import datetime
+import threading
+import pandas as pd
+import numpy as np
+from collections import deque
+from scipy.stats import norm, zscore
+from sklearn.linear_model import LinearRegression
+from google.oauth2.service_account import Credentials
+import pyotp
+import pytz
+import robin_stocks as rs
+import gspread
+import schedule
+import tweepy
+import mpu
+from time import sleep
+from sklearn.preprocessing import StandardScaler
 import schedule
 import time
 import datetime
 import logging
 from collections import deque
 from datetime import datetime
-from scipy.stats import norm
-from scipy.stats import zscore
+from scipy.stats import norm, zscore
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import StandardScaler
 from threading import Lock
-from time import *
-from time import time, sleep
-import datetime
-import logging
-import mpu
 import numpy as np
 import os
 import pandas as pd
-import pandas_ta as ta
-import pyotp
-import pytz
-import random
-import robin_stocks as rs
-import schedule
-import subprocess
-import threading
-import time
-import tweepy
-import gspread
+import pandas_ta as ta 
+
 # Initialize logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+WATCHLIST_NAMES = ["100 Most Popular", "Popular Recurring Investments", "Upcoming Earnings"]
 
-# Constants
-WATCHLIST_NAMES = ["100 Most Popular", "Popular Recurring Investments"]
+# Function to calculate key metrics like EMA, RSI, etc.
+def calculate_metrics(data, short_window, long_window, rsi_window):
+    # Calculate short and long-term Exponential Moving Averages
+    short_ema = data['Close'].ewm(span=short_window, adjust=False).mean()
+    long_ema = data['Close'].ewm(span=long_window, adjust=False).mean()
+    # Calculate RSI
+    delta = data['Close'].diff(1)
+    gain = (delta.where(delta > 0, 0)).rolling(window=rsi_window, min_periods=1).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=rsi_window, min_periods=1).mean()
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs))
+    return short_ema, long_ema, rsi
 
-from google.oauth2.service_account import Credentials
+# Function to calculate key metrics like EMA, RSI, etc.
+def calculate_metrics(data, short_window, long_window, rsi_window):
+    # Calculate short and long-term Exponential Moving Averages
+    short_ema = data['Close'].ewm(span=short_window, adjust=False).mean()
+    long_ema = data['Close'].ewm(span=long_window, adjust=False).mean()
+    # Calculate RSI
+    delta = data['Close'].diff(1)
+    gain = (delta.where(delta > 0, 0)).rolling(window=rsi_window, min_periods=1).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=rsi_window, min_periods=1).mean()
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs))
+    return short_ema, long_ema, rsi
 
-scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/spreadsheets','https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/drive']
-
-credentials = Credentials.from_service_account_file(
-    '/botStuff/botstuff.json',
-    scopes=scope
-)
-
-# Open the Google Sheet
-worksheet = client.open('RH1061-TradeSignals').sheet1
-# Function to append trade signal to Google Sheet
-def append_trade_signal_to_sheet(timestamp, asset, trade_signal, macd, rsi, short_term_slope, long_term_slope):
-    worksheet.append_row([timestamp, asset, trade_signal, macd, rsi, short_term_slope, long_term_slope])
-    
 # Function to calculate MACD and Signal line
 def calculate_macd(data, short_window=12, long_window=26, signal_window=9):
     short_ema = data['Close'].ewm(span=short_window, adjust=False).mean()
@@ -152,10 +165,10 @@ def _helper_sellStock(ticker, quantity, last_trade_price):
 def _helper_buyStock(ticker, last_trade_price):
     trade_size = 1.11
     sleep(random.randint(3, 5))
-    try:
-       logging.info(rs.robinhood.orders.order_buy_fractional_by_price(symbol=ticker, amountInDollars=1.11, timeInForce='gfd', extendedHours=False))
-    except Exception as e: 
-        logging.error(f"{ticker}: {e}")
+    #try:
+    #   logging.info(rs.robinhood.orders.order_buy_fractional_by_price(symbol=ticker, amountInDollars=1.11, timeInForce='gfd', extendedHours=False))
+    #except Exception as e: 
+    #    logging.error(f"{ticker}: {e}")
     return
 
 
@@ -182,67 +195,102 @@ def fetch_watchlist():
 def fetch_fundamentals(rh_symbol):
     return pd.DataFrame(rs.robinhood.stocks.get_fundamentals(rh_symbol, info=None))
 
+def get_gpt_sentiment(text):
+    import openai
+    # Initialize OpenAI API
+    api_key = os.getenv('openAiKey') 
+    openai.api_key = api_key
+    # Define conversation
+    conversation = [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": f"Is the news '{text}' positive, negative, or neutral? Only respond with the requested response of positive, negative, or neutral"}
+    ]
+    # Get response from GPT-3.5 Turbo
+    response = openai.ChatCompletion.create(
+        model="gpt-3.5-turbo",
+        messages=conversation,
+        max_tokens=33
+    )
+    # Extract and return sentiment
+    sentiment = response.choices[0].message['content'].strip()
+    return sentiment
 
-def trade(rhSymbol, quantity, last_trade_price, pdFundementals):
-    df = get_stock_historicals(rhSymbol,"hour","month",logon)
-    df = pd.DataFrame(df)
+
+# Define a mock trade helper function for backtesting
+def _helper_mockTrade(ticker, action, last_trade_price):
+    return {"ticker": ticker, "action": action, "price": last_trade_price}
+
+# Define the trade function adapted for backtesting
+def trade_backtest(df, buydf, pdFundementals, rhSymbol, last_trade_price):
+    # Initialize action and details for logging
+    action = "Hold"
+    
     # Compute MACD conditions
-    macd_condition_buy = df['MACDs_12_26_9'].iloc[-1] < df['MACD_12_26_9'].iloc[-1] and df['MACDs_12_26_9'].iloc[-2] >= df['MACD_12_26_9'].iloc[-2]
+    macd_condition_buy = buydf['MACDs_12_26_9'].iloc[-1] < buydf['MACD_12_26_9'].iloc[-1] or (buydf['MACDs_12_26_9'].iloc[-1] >= buydf['MACDs_12_26_9'].iloc[-3])
     macd_condition_sell = df['MACDs_12_26_9'].iloc[-1] > df['MACD_12_26_9'].iloc[-1]
+    
     # Compute recent price slope
     recent_slope = (df['close_price'].iloc[-1] - df['close_price'].iloc[-2])
+    
     # Compute fundamental indicators
     pdFundementals = pdFundementals.infer_objects().convert_dtypes()
     pdFundementals['pe_ratio'] = pd.to_numeric(pdFundementals['pe_ratio'], errors='coerce')
     pdFundementals['average_volume'] = pd.to_numeric(pdFundementals['average_volume'], errors='coerce')
     
-    # Initialize action and details for logging
-    action = "Hold"
-    details = {
-        "MACD Condition for Buy": macd_condition_buy,
-        "MACD Condition for Sell": macd_condition_sell,
-        "Recent Price Slope": recent_slope,
-        "RSI 2-Period": df['RSI_2'].iloc[-1],
-        "RSI 9-Period": df['RSI_9'].iloc[-1],
-        "Dividend Yield": pdFundementals['dividend_yield'].astype(float)[0],
-        "Average Volume": pdFundementals['average_volume'].astype(float)[0],
-        "PE Ratio": pdFundementals['pe_ratio'].astype(float)[0]
-    }
+    dynamic_rsi_upper = buydf['RSI_14'].rolling(window=20).max().iloc[-1]
+    dynamic_rsi_lower = buydf['RSI_14'].rolling(window=20).min().iloc[-1]
     
-    # Buy condition
-    if (
-        macd_condition_buy 
-        and df['RSI_2'].iloc[-1] < 30 
-        and df['RSI_2'].iloc[-1] > df['RSI_2'].iloc[-3]
-        and df['RSI_9'].iloc[-1] > df['RSI_9'].iloc[-2]
-        and pdFundementals['dividend_yield'].astype(float)[0] > 0.00
-        and pdFundementals['average_volume'].astype(float)[0] > pdFundementals['average_volume_30_days'].astype(float)[0]
-        and pdFundementals['pe_ratio'] < 35 
-    ) :
+    # Calculate adaptive MACD settings based on recent price action volatility
+    volatility = buydf['high_price'].astype(float).iloc[-10:].std()
+    
+    if volatility < 0.5:
+        macd_short, macd_long, macd_signal = 12, 26, 9
+    else:
+        macd_short, macd_long, macd_signal = 5, 35, 5
+    
+    # Make a decision based on Priority 1 indicators
+    if macd_condition_buy and (df['RSI_2'].iloc[-1] < 10 and df['RSI_9'].iloc[-1] < 55):
         action = "Buy"
-    
-    # Sell condition
-    elif (
-        macd_condition_sell 
-        and df['RSI_2'].iloc[-1] < df['RSI_2'].iloc[-3]
-        and df['RSI_9'].iloc[-1] > df['RSI_9'].iloc[-2]
-        and df['RSI_2'].iloc[-1] > 65
-        and df['MACDh_12_26_9'].iloc[-1] > 0
-    ) :
+    elif macd_condition_sell or (df['RSI_2'].iloc[-1] > dynamic_rsi_lower) or (df['RSI_2'].iloc[-1] > 65 and df['RSI_9'].iloc[-1] > 65):
         action = "Sell"
         
-    # Create the log message
-    message = f"{action} signal for {rhSymbol}. Details: {details}"
+    # Simulate the trade for backtesting
+    trade_result = _helper_mockTrade(ticker=rhSymbol, action=action, last_trade_price=last_trade_price)
     
-    # Log the message
-    try:
-        logging.info(message)
-    except Exception as e:
-        logging.error(f"{rhSymbol}: Action Failed; {e}")
-    
-    return
+    return trade_result
 
 
+def trade(rhSymbol, quantity, last_trade_price, pdFundementals):
+    # Fetch historical data
+    buydf = get_stock_historicals(rhSymbol, "hour", "3month", logon)
+    df = get_stock_historicals(rhSymbol, "day", "5year", logon)
+    df = pd.DataFrame(df)
+    buydf = pd.DataFrame(buydf)
+    # Compute MACD conditions
+    macd_condition_buy = buydf['MACDs_12_26_9'].iloc[-1] < buydf['MACD_12_26_9'].iloc[-1]
+    macd_condition_sell = df['MACDs_12_26_9'].iloc[-1] > df['MACD_12_26_9'].iloc[-1]
+    # Dynamic RSI bounds
+    dynamic_rsi_upper = buydf['RSI_14'].rolling(window=20).max().iloc[-1]
+    dynamic_rsi_lower = buydf['RSI_14'].rolling(window=20).min().iloc[-1]
+    # Volume indicators
+    pricebook = rs.robinhood.stocks.get_pricebook_by_symbol(rhSymbol)
+    asks = pricebook.get("asks", [])
+    bids = pricebook.get("bids", [])
+    total_ask_volume = sum(ask["quantity"] for ask in asks)
+    total_bid_volume = sum(bid["quantity"] for bid in bids)
+    # Initialize action
+    action = "Hold"
+    # Buy Conditions: MACD bullish and higher bid volume
+    if macd_condition_buy and (total_bid_volume > total_ask_volume) and (df['RSI_2'].iloc[-1] < 10 and df['RSI_9'].iloc[-1] < 55):
+        action = "Buy"
+        _helper_buyStock(ticker=rhSymbol, last_trade_price=last_trade_price)
+    # Sell Conditions: MACD bearish and RSI overbought and higher ask volume
+    elif (macd_condition_sell and (total_ask_volume > total_bid_volume)) or (df['RSI_2'].iloc[-1] > 65 and df['RSI_9'].iloc[-1] > 65 and total_ask_volume > total_bid_volume):
+        action = "Sell"
+        _helper_sellStock(ticker=rhSymbol, quantity=quantity, last_trade_price=last_trade_price)
+    message = f"{action} signal for {rhSymbol}. RSI Upper: {dynamic_rsi_upper}, RSI Lower: {dynamic_rsi_lower}. Bid Volume: {total_bid_volume}, Ask Volume: {total_ask_volume}"
+    logging.info(message)
+    return action
 
 def main_open_positions(logon):
     try:
@@ -266,6 +314,8 @@ def main_open_positions(logon):
                 fundamentals = fetch_fundamentals(rh_symbol)
                 # Starting a new thread for trading (assuming trade is a defined function)
                 threading.Thread(target=trade, args=(rh_symbol, quantity, last_trade_price, fundamentals)).start()
+                # trade(rh_symbol, quantity, last_trade_price, fundamentals)
+                # trade_backtest(hr_df, day_df, fundamentals, rh_symbol, last_trade_price)
             except Exception as e:
                 logging.error(f"Error processing row {index}: {e}")
         logging.info("Completed processing all rows.")
@@ -335,33 +385,21 @@ def log_status():
     for job in schedule.jobs:
         logging.info(f"Job: {job}")
 
+def job_wrapper():
+    current_time = datetime.datetime.now().time()
+    start_time = datetime.time(10, 15)
+    end_time = datetime.time(14, 45)
+    if start_time <= current_time <= end_time:
+        main_open_positions(logon)
+    return
+
 # Initialize the rate limit queue
 rate_limit_queue = deque(maxlen=5)
 
 logon=_1_init()
 chicago_tz = pytz.timezone('America/Chicago')
+
+
 main_open_positions(logon)
 
 
-# Initialize the list of days and times
-days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']
-morning_time = "10:30"
-afternoon_time = "14:30"
-
-# Main loop to run the scheduled tasks
-if __name__ == '__main__':
-    logging.info('Scheduler started')    
-    # Schedule the morning_function
-    for day in days:
-        getattr(schedule.every(), day).at(morning_time).do(main_open_positions(logon)).tag(day, 'morning')
-        logging.info(f"Scheduled morning_function to run every {day} at {morning_time}")
-    # Schedule the afternoon_function
-    for day in days:
-        getattr(schedule.every(), day).at(afternoon_time).do(main_open_positions(logon)).tag(day, 'afternoon')
-        logging.info(f"Scheduled afternoon_function to run every {day} at {afternoon_time}")
-    # Schedule the status logging function to run every 5 minutes
-    schedule.every(5).minutes.do(log_status)
-    logging.info("Scheduled log_status to run every 5 minutes")
-    while True:
-        schedule.run_pending()
-        time.sleep(1)
