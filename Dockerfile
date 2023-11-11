@@ -14,7 +14,7 @@ WORKDIR /botStuff
 COPY . .
 
 RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -r /botStuff/_CryptoBots/cryptoBot_requirements.txt \
-    && pip install --no-cache-dir -r /botStuff/_StockBot/stockBot_requirements.txt 
+    && pip install -r /botStuff/_CryptoBots/cryptoBot_requirements.txt \
+    && pip install -r /botStuff/_StockBot/stockBot_requirements.txt 
 
 CMD ["sh", "-c", "python3 /botStuff/_CryptoBots/cryptoBot.py & python3 /botStuff/_StockBot/stockBot.py"]
