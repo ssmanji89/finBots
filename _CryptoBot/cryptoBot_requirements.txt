@@ -1,0 +1,33 @@
+
+# Data manipulation and computation
+pandas
+numpy
+
+# Statistical and mathematical operations
+scipy
+
+# One-Time Password library
+pyotp
+
+# Timezone support
+pytz
+
+# Robinhood API
+robin-stocks
+
+# Task scheduling
+schedule
+
+# Twitter API
+tweepy
+
+# Geographical utility
+mpu
+
+# Technical analysis
+pandas-ta
+
+apscheduler
+
+scikit-learn
+finviz
