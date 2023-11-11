@@ -17,6 +17,6 @@ COPY . .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt 
+    && pip install --no-cache-dir -r /botStuff/_CryptoBots/requirements.txt 
 
-CMD ["python3", "/botStuff/cryptoBot.py"]
+CMD ["python3", "/botStuff/_CryptoBots/cryptoBot.py"]
