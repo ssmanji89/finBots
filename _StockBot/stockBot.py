@@ -2,6 +2,8 @@
 # -*- coding: utf-8 -*-
 
 # Import libraries
+from apscheduler.schedulers.background import BackgroundScheduler
+from pytz import timezone
 import os
 import time
 import random
@@ -12,26 +14,19 @@ import pandas as pd
 import numpy as np
 from collections import deque
 from scipy.stats import norm, zscore
-from sklearn.linear_model import LinearRegression
-from google.oauth2.service_account import Credentials
 import pyotp
 import pytz
 import robin_stocks as rs
-import gspread
 import schedule
 import tweepy
 import mpu
-from time import sleep
-from sklearn.preprocessing import StandardScaler
+from time import sleep 
 import schedule
-import time
 import datetime
 import logging
 from collections import deque
 from datetime import datetime
 from scipy.stats import norm, zscore
-from sklearn.linear_model import LinearRegression
-from sklearn.preprocessing import StandardScaler
 from threading import Lock
 import numpy as np
 import os
@@ -41,83 +36,7 @@ import pandas_ta as ta
 # Initialize logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 WATCHLIST_NAMES = ["100 Most Popular", "Popular Recurring Investments", "Upcoming Earnings"]
-
-# Function to calculate key metrics like EMA, RSI, etc.
-def calculate_metrics(data, short_window, long_window, rsi_window):
-    # Calculate short and long-term Exponential Moving Averages
-    short_ema = data['Close'].ewm(span=short_window, adjust=False).mean()
-    long_ema = data['Close'].ewm(span=long_window, adjust=False).mean()
-    # Calculate RSI
-    delta = data['Close'].diff(1)
-    gain = (delta.where(delta > 0, 0)).rolling(window=rsi_window, min_periods=1).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=rsi_window, min_periods=1).mean()
-    rs = gain / loss
-    rsi = 100 - (100 / (1 + rs))
-    return short_ema, long_ema, rsi
-
-# Function to calculate key metrics like EMA, RSI, etc.
-def calculate_metrics(data, short_window, long_window, rsi_window):
-    # Calculate short and long-term Exponential Moving Averages
-    short_ema = data['Close'].ewm(span=short_window, adjust=False).mean()
-    long_ema = data['Close'].ewm(span=long_window, adjust=False).mean()
-    # Calculate RSI
-    delta = data['Close'].diff(1)
-    gain = (delta.where(delta > 0, 0)).rolling(window=rsi_window, min_periods=1).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=rsi_window, min_periods=1).mean()
-    rs = gain / loss
-    rsi = 100 - (100 / (1 + rs))
-    return short_ema, long_ema, rsi
-
-# Function to calculate MACD and Signal line
-def calculate_macd(data, short_window=12, long_window=26, signal_window=9):
-    short_ema = data['Close'].ewm(span=short_window, adjust=False).mean()
-    long_ema = data['Close'].ewm(span=long_window, adjust=False).mean()
-    macd = short_ema - long_ema
-    signal_line = macd.ewm(span=signal_window, adjust=False).mean()
-    return macd, signal_line
-
-# Function to calculate RSI
-def calculate_rsi(data, window=14):
-    delta = data['Close'].diff(1)
-    gain = (delta.where(delta > 0, 0)).rolling(window=window, min_periods=1).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=window, min_periods=1).mean()
-    rs = gain / loss
-    rsi = 100 - (100 / (1 + rs))
-    return rsi
-
-# Function to calculate Bollinger Bands
-def calculate_bollinger_bands(data, window=20, num_std_dev=2):
-    rolling_mean = data['Close'].rolling(window=window).mean()
-    rolling_std = data['Close'].rolling(window=window).std()
-    upper_band = rolling_mean + (rolling_std * num_std_dev)
-    lower_band = rolling_mean - (rolling_std * num_std_dev)
-    return upper_band, lower_band
-
-# Function to calculate Simple Moving Average (SMA)
-def calculate_sma(data, window=20):
-    return data['Close'].rolling(window=window).mean()
-
-
-# Function to calculate regression slope for close prices over a given window
-def calculate_regression_slope(data, window):
-    slopes = []
-    for i in range(len(data) - window + 1):
-        y = data['Close'].iloc[i:i+window].values.reshape(-1, 1)
-        X = np.array(range(window)).reshape(-1, 1)
-        
-        model = LinearRegression()
-        model.fit(X, y)
-        slope = model.coef_[0][0]
-        slopes.append(slope)
-        
-    # Pad with NaN for missing values at the beginning
-    slopes = [np.nan] * (window - 1) + slopes
-    return pd.Series(slopes, index=data.index)
-
-
-
-
-
+ 
 class RateLimitHandler:
     def __init__(self, rate, per, allow_burst=False):
         self.rate = rate
@@ -126,7 +45,8 @@ class RateLimitHandler:
         self.time_queue = deque()
         self.lock = Lock()
         self.maxlen = rate if allow_burst else None
-        return        
+        return
+    
     def __call__(self, f):
         def wrapped_f(*args, **kwargs):
             with self.lock:
@@ -144,19 +64,17 @@ class RateLimitHandler:
                     return f(*args, **kwargs)
         return wrapped_f
     
-
-
 def _1_init():
     cur_user, cur_pass, cur_totp_secret = fetch_env_vars()
-    totp = generate_totp(cur_totp_secret)
+    totp = pyotp.TOTP(cur_totp_secret).now()
     print(rs.robinhood.authentication.login(cur_user, cur_pass, mfa_code=totp))
     return
 
 
 def _helper_sellStock(ticker, quantity, last_trade_price):
-    sleep(random.randint(3, 5))
-    if quantity > 0:
+    if quantity > 0.000000001:
         try:
+            sleep(random.randint(3, 5))
             logging.info(rs.robinhood.orders.order(symbol=ticker, quantity=round(quantity, 5), side="sell", timeInForce='gfd'))
         except Exception as e: 
             logging.error(f"{ticker}: {e}")
@@ -164,19 +82,18 @@ def _helper_sellStock(ticker, quantity, last_trade_price):
 
 def _helper_buyStock(ticker, last_trade_price):
     trade_size = 1.11
-    sleep(random.randint(3, 5))
-    #try:
-    #   logging.info(rs.robinhood.orders.order_buy_fractional_by_price(symbol=ticker, amountInDollars=1.11, timeInForce='gfd', extendedHours=False))
-    #except Exception as e: 
-    #    logging.error(f"{ticker}: {e}")
+    try:
+        sleep(random.randint(3, 5))
+        logging.info(rs.robinhood.orders.order_buy_fractional_by_price(symbol=ticker, amountInDollars=1.11, timeInForce='gfd', extendedHours=False))
+    except Exception as e: 
+        logging.error(f"{ticker}: {e}")
     return
-
 
 def fetch_env_vars():
     """Fetch environment variables."""
-    cur_user = os.getenv('curUser')
-    cur_pass = os.getenv('curPass')
-    cur_totp_secret = os.getenv('curTotp')
+    cur_user = os.environ.get('CURUSER')
+    cur_pass = os.environ.get('CURPASS')
+    cur_totp_secret = os.environ.get('CURTOTP')
     if not cur_user or not cur_pass or not cur_totp_secret:
         raise ValueError("Environment variables not set correctly.")    
     return cur_user, cur_pass, cur_totp_secret
@@ -195,104 +112,119 @@ def fetch_watchlist():
 def fetch_fundamentals(rh_symbol):
     return pd.DataFrame(rs.robinhood.stocks.get_fundamentals(rh_symbol, info=None))
 
-def get_gpt_sentiment(text):
-    import openai
-    # Initialize OpenAI API
-    api_key = os.getenv('openAiKey') 
-    openai.api_key = api_key
-    # Define conversation
-    conversation = [
-        {"role": "system", "content": "You are a helpful assistant."},
-        {"role": "user", "content": f"Is the news '{text}' positive, negative, or neutral? Only respond with the requested response of positive, negative, or neutral"}
-    ]
-    # Get response from GPT-3.5 Turbo
-    response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
-        messages=conversation,
-        max_tokens=33
-    )
-    # Extract and return sentiment
-    sentiment = response.choices[0].message['content'].strip()
-    return sentiment
+import pandas as pd
+import numpy as np
+import pandas as pd
+import numpy as np
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error
+
+def train_model(df, features, target):
+    X = df[features]
+    y = df[target]
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
+    model = RandomForestRegressor()
+    model.fit(X_train, y_train)
+    predictions = model.predict(X_test)
+    mse = mean_squared_error(y_test, predictions)
+    print(f'Model MSE: {mse}')
+    return model
 
 
-# Define a mock trade helper function for backtesting
-def _helper_mockTrade(ticker, action, last_trade_price):
-    return {"ticker": ticker, "action": action, "price": last_trade_price}
+def optimize_lookback(df, eval_metric):
+    best_metric = float('-inf')
+    best_lookback = None
+    # Iterate over a range of lookback periods to find the best one
+    for lookback in range(1, len(df) // 2):  # Adjust the range as needed
+        df['Action'] = evaluate_macd_signals(df, lookback_period=lookback)
+        current_metric = eval_metric(df['Action'], df['close_price'])
+        if current_metric > best_metric:
+            best_metric = current_metric
+            best_lookback = lookback
+    return best_lookback
 
-# Define the trade function adapted for backtesting
-def trade_backtest(df, buydf, pdFundementals, rhSymbol, last_trade_price):
-    # Initialize action and details for logging
-    action = "Hold"
-    
-    # Compute MACD conditions
-    macd_condition_buy = buydf['MACDs_12_26_9'].iloc[-1] < buydf['MACD_12_26_9'].iloc[-1] or (buydf['MACDs_12_26_9'].iloc[-1] >= buydf['MACDs_12_26_9'].iloc[-3])
-    macd_condition_sell = df['MACDs_12_26_9'].iloc[-1] > df['MACD_12_26_9'].iloc[-1]
-    
-    # Compute recent price slope
-    recent_slope = (df['close_price'].iloc[-1] - df['close_price'].iloc[-2])
-    
-    # Compute fundamental indicators
-    pdFundementals = pdFundementals.infer_objects().convert_dtypes()
-    pdFundementals['pe_ratio'] = pd.to_numeric(pdFundementals['pe_ratio'], errors='coerce')
-    pdFundementals['average_volume'] = pd.to_numeric(pdFundementals['average_volume'], errors='coerce')
-    
-    dynamic_rsi_upper = buydf['RSI_14'].rolling(window=20).max().iloc[-1]
-    dynamic_rsi_lower = buydf['RSI_14'].rolling(window=20).min().iloc[-1]
-    
-    # Calculate adaptive MACD settings based on recent price action volatility
-    volatility = buydf['high_price'].astype(float).iloc[-10:].std()
-    
-    if volatility < 0.5:
-        macd_short, macd_long, macd_signal = 12, 26, 9
+def calculate_volatility(df, short_window=14, long_window=252):
+    """
+    Calculate the volatility using two windows: a short window for short-term volatility
+    and a long window for long-term volatility. The 'long_window' defaults to 252, 
+    which is the typical number of trading days in a year, to capture annual volatility.
+    """
+    short_term_volatility = df['close_price'].pct_change().rolling(window=short_window).std(ddof=0)
+    long_term_volatility = df['close_price'].pct_change().rolling(window=long_window).std(ddof=0)
+    return short_term_volatility, long_term_volatility
+
+def calculate_volume_ratio(df, short_window=14, long_window=28):
+    short_vol = df['volume'].rolling(window=short_window).mean()
+    long_vol = df['volume'].rolling(window=long_window).mean()
+    return short_vol / long_vol
+
+def evaluate_macd_signals(df):
+    # Calculate volatility and volume ratio
+    df['Short_Term_Volatility'], df['Long_Term_Volatility'] = calculate_volatility(df)
+    df['Volume_Ratio'] = calculate_volume_ratio(df)
+    # Determine dynamic lookback_period based on long-term volatility
+    if df['Long_Term_Volatility'].iloc[-1] > df['Long_Term_Volatility'].median():
+        lookback_period = max(int(df['Long_Term_Volatility'].count() * 0.1), 1)  # Shorter in high volatility
     else:
-        macd_short, macd_long, macd_signal = 5, 35, 5
-    
-    # Make a decision based on Priority 1 indicators
-    if macd_condition_buy and (df['RSI_2'].iloc[-1] < 10 and df['RSI_9'].iloc[-1] < 55):
-        action = "Buy"
-    elif macd_condition_sell or (df['RSI_2'].iloc[-1] > dynamic_rsi_lower) or (df['RSI_2'].iloc[-1] > 65 and df['RSI_9'].iloc[-1] > 65):
-        action = "Sell"
-        
-    # Simulate the trade for backtesting
-    trade_result = _helper_mockTrade(ticker=rhSymbol, action=action, last_trade_price=last_trade_price)
-    
-    return trade_result
+        lookback_period = min(int(df['Long_Term_Volatility'].count() * 0.2), len(df) - 1)  # Longer in low volatility
+    # Adjust lookback_period based on volume ratio
+    if df['Volume_Ratio'].iloc[-1] > 1:
+        lookback_period = max(int(lookback_period * 0.75), 1)
+    elif df['Volume_Ratio'].iloc[-1] < 1:
+        lookback_period = min(int(lookback_period * 1.25), len(df) - 1)
+    # Select the MACD and signal line values based on the dynamic lookback_period
+    macd_line = df['MACD_3_9_7'].iloc[-lookback_period:]
+    macd_signal = df['MACDs_3_9_7'].iloc[-lookback_period:]
+    macd_histogram = df['MACDh_3_9_7'].iloc[-lookback_period:]
+    # Initialize the action as 'Hold'
+    action = 'Hold'
+    # Check for Sell signal
+    if (macd_line.iloc[-1] < macd_signal.iloc[-1] and
+        macd_line.iloc[-2] > macd_signal.iloc[-2] and
+        all(macd_histogram > 0) and
+        macd_histogram.iloc[-1] < 0 and
+        df['RSI_2'].iloc[-1] > 70 and df['RSI_9'].iloc[-1] > 65):
+        action = 'Sell'
+    # Check for Buy signal
+    elif (macd_line.iloc[-1] > macd_signal.iloc[-1] and
+          macd_line.iloc[-2] < macd_signal.iloc[-2] and
+          all(macd_histogram < 0) and
+          macd_histogram.iloc[-1] > 0 and
+          df['RSI_2'].iloc[-1] < 30 and df['RSI_9'].iloc[-1] < 55):
+        action = 'Buy'
+    # Return the action recommendation
+    return action
 
 
-def trade(rhSymbol, quantity, last_trade_price, pdFundementals):
+def trade(rhSymbol, quantity, last_trade_price, pdFundementals, logon):
     # Fetch historical data
-    buydf = get_stock_historicals(rhSymbol, "hour", "3month", logon)
-    df = get_stock_historicals(rhSymbol, "day", "5year", logon)
-    df = pd.DataFrame(df)
-    buydf = pd.DataFrame(buydf)
-    # Compute MACD conditions
-    macd_condition_buy = buydf['MACDs_12_26_9'].iloc[-1] < buydf['MACD_12_26_9'].iloc[-1]
-    macd_condition_sell = df['MACDs_12_26_9'].iloc[-1] > df['MACD_12_26_9'].iloc[-1]
-    # Dynamic RSI bounds
-    dynamic_rsi_upper = buydf['RSI_14'].rolling(window=20).max().iloc[-1]
-    dynamic_rsi_lower = buydf['RSI_14'].rolling(window=20).min().iloc[-1]
-    # Volume indicators
+    rs.robinhood.get_stock_historicals()
+    # buydf = get_stock_historicals(rhSymbol, "hour", "3month", logon)
+    df = buydf = get_stock_historicals(rhSymbol, "day", "5year", logon)
     pricebook = rs.robinhood.stocks.get_pricebook_by_symbol(rhSymbol)
     asks = pricebook.get("asks", [])
     bids = pricebook.get("bids", [])
-    total_ask_volume = sum(ask["quantity"] for ask in asks)
-    total_bid_volume = sum(bid["quantity"] for bid in bids)
-    # Initialize action
     action = "Hold"
-    # Buy Conditions: MACD bullish and higher bid volume
-    if macd_condition_buy and (total_bid_volume > total_ask_volume) and (df['RSI_2'].iloc[-1] < 10 and df['RSI_9'].iloc[-1] < 55):
-        action = "Buy"
-        _helper_buyStock(ticker=rhSymbol, last_trade_price=last_trade_price)
-    # Sell Conditions: MACD bearish and RSI overbought and higher ask volume
-    elif (macd_condition_sell and (total_ask_volume > total_bid_volume)) or (df['RSI_2'].iloc[-1] > 65 and df['RSI_9'].iloc[-1] > 65 and total_ask_volume > total_bid_volume):
-        action = "Sell"
+    # _helper_buyStock(ticker=rhSymbol, last_trade_price=last_trade_price)
+    # 
+    # Apply the function to the DataFrame with a specified lookback period
+    trading_action = evaluate_macd_signals(df)
+    if (trading_action == 'Sell'): 
         _helper_sellStock(ticker=rhSymbol, quantity=quantity, last_trade_price=last_trade_price)
-    message = f"{action} signal for {rhSymbol}. RSI Upper: {dynamic_rsi_upper}, RSI Lower: {dynamic_rsi_lower}. Bid Volume: {total_bid_volume}, Ask Volume: {total_ask_volume}"
-    logging.info(message)
+        message = f"Recommended action: {trading_action} for {rhSymbol}. "; 
+        logging.info(message)
+    elif (trading_action == 'Buy'): 
+        _helper_buyStock(ticker=rhSymbol, last_trade_price=last_trade_price) 
+        message = f"Recommended action: {trading_action} for {rhSymbol}. "; 
+        logging.info(message)
+    else: 
+        message = f"Recommended action: {trading_action} for {rhSymbol}. "; 
+        logging.info(message)
     return action
 
-def main_open_positions(logon):
+def main_open_positions():
+    logon=_1_init()
     try:
         open_positions = fetch_open_positions()
         full_watchlist = fetch_watchlist()
@@ -305,22 +237,21 @@ def main_open_positions(logon):
                 instrument = row.get('id')
                 quantity = float(row.get('open_positions') or row.get('quantity'))
                 average_buy_price = float(row.get('price') or row.get('average_buy_price'))
-                rh_symbol = row.get('symbol')
-                
                 # Fetch additional data
                 stock_quote = rs.robinhood.get_stock_quote_by_id(instrument_id)
                 last_trade_price = float(stock_quote.get('last_trade_price'))
                 previous_close = float(stock_quote.get('previous_close'))
-                fundamentals = fetch_fundamentals(rh_symbol)
-                # Starting a new thread for trading (assuming trade is a defined function)
-                threading.Thread(target=trade, args=(rh_symbol, quantity, last_trade_price, fundamentals)).start()
-                # trade(rh_symbol, quantity, last_trade_price, fundamentals)
+                rh_symbol = str(stock_quote.get('symbol'))
+                fundamentals = pd.DataFrame() # fetch_fundamentals(rh_symbol)
+                threading.Thread(target=trade, args=(rh_symbol, quantity, last_trade_price, fundamentals, logon)).start()
+                # trade(rh_symbol, quantity, last_trade_price, fundamentals, logon)
                 # trade_backtest(hr_df, day_df, fundamentals, rh_symbol, last_trade_price)
             except Exception as e:
                 logging.error(f"Error processing row {index}: {e}")
         logging.info("Completed processing all rows.")
     except Exception as e:
         logging.error(f"An error occurred in main_open_positions: {e}")
+        exit
 
 
 def get_stock_historicals(rhSymbol, interval, span, logon):
@@ -328,11 +259,8 @@ def get_stock_historicals(rhSymbol, interval, span, logon):
         # replace any "-USD" suffix with ""
         rhSymbol = rhSymbol.replace("-USD","")
         # fetch historical data
-        historical_data = rs.robinhood.get_stock_historicals(inputSymbols=rhSymbol,interval=interval,span=span)
-        # convert the fetched data into a pandas DataFrame
-        df = pd.DataFrame(historical_data)
-        # cast prices into float type
-        df[['close_price', 'high_price', 'low_price']] = df[['close_price', 'high_price', 'low_price']].astype(float)
+        df = historical_data = pd.DataFrame(rs.robinhood.get_stock_historicals(inputSymbols=rhSymbol,interval=interval,span=span))
+        df[['open_price','close_price','high_price','low_price','volume']] = df[['open_price','close_price','high_price','low_price','volume']].astype(float)
     except Exception as exception:
         logging.error(f"> {rhSymbol} {interval}:{span} - Error assembling dataframe; do not continue.")
         return
@@ -358,48 +286,46 @@ def get_stock_historicals(rhSymbol, interval, span, logon):
         try: df = df.join(ta.sma(close=df['close_price'], length=50))
         except: pass
         df = df.join(ta.adx(high=df['high_price'], low=df['low_price'], close=df['close_price'], length=3))
-        df = df.join(ta.macd(close=df['close_price'], fast=12, slow=26, signal=9))
+        df = df.join(ta.macd(close=df['close_price'], fast=3, slow=9, signal=7))
         df = df.join(ta.psar(high=df['high_price'], low=df['low_price'], close=df['close_price']))
         df = df.join(ta.bbands(close=df['close_price'], length=5))
         df = df.join(ta.atr(high=df['high_price'], low=df['low_price'], close=df['close_price'], length=14))
         df = df.join(ta.kc(df['high_price'], df['low_price'], df['close_price'], 3))
         # replace any NaN values with 0
         df = df.fillna(value=0,axis=1)
+        # cast prices into float type
+        df[['open_price','close_price','high_price','low_price','volume','MOM_2','RSI_2','EMA_2','MOM_3','RSI_3','EMA_3','MOM_5','RSI_5','EMA_5','MOM_7','RSI_7','EMA_7','MOM_9','RSI_9','EMA_9','MOM_14','RSI_14','EMA_14','EMA_20','EMA_50','EMA_70','SMA_200','SMA_100','SMA_50','ADX_3','DMP_3','DMN_3','MACD_3_9_7','MACDh_3_9_7','MACDs_3_9_7','PSARl_0.02_0.2','PSARs_0.02_0.2','PSARaf_0.02_0.2','PSARr_0.02_0.2','BBL_5_2.0','BBM_5_2.0','BBU_5_2.0','BBB_5_2.0','BBP_5_2.0','ATRr_14','KCLe_3_2','KCBe_3_2','KCUe_3_2']] = df[['open_price','close_price','high_price','low_price','volume','MOM_2','RSI_2','EMA_2','MOM_3','RSI_3','EMA_3','MOM_5','RSI_5','EMA_5','MOM_7','RSI_7','EMA_7','MOM_9','RSI_9','EMA_9','MOM_14','RSI_14','EMA_14','EMA_20','EMA_50','EMA_70','SMA_200','SMA_100','SMA_50','ADX_3','DMP_3','DMN_3','MACD_3_9_7','MACDh_3_9_7','MACDs_3_9_7','PSARl_0.02_0.2','PSARs_0.02_0.2','PSARaf_0.02_0.2','PSARr_0.02_0.2','BBL_5_2.0','BBM_5_2.0','BBU_5_2.0','BBB_5_2.0','BBP_5_2.0','ATRr_14','KCLe_3_2','KCBe_3_2','KCUe_3_2']].astype(float)
     except Exception as e:
         logging.error(f"Error performing calculations: {e}")
         return
     return df
 
-def log_alive_message():
-    logging.info('Application is running normally')
-    
-# Scheduling Logic
-def job():
-    weekday = datetime.datetime.now().strftime('%A')
-    if weekday not in ['Saturday', 'Sunday']:
-        main_open_positions()
+def cancel_all_stockOrders(): return print(rs.robinhood.cancel_all_stock_orders())
 
-# Function for logging worker status
-def log_status():
-    logging.info('Worker is running. Checking scheduled tasks...')
-    for job in schedule.jobs:
-        logging.info(f"Job: {job}")
-
-def job_wrapper():
-    current_time = datetime.datetime.now().time()
-    start_time = datetime.time(10, 15)
-    end_time = datetime.time(14, 45)
-    if start_time <= current_time <= end_time:
-        main_open_positions(logon)
-    return
 
 # Initialize the rate limit queue
-rate_limit_queue = deque(maxlen=5)
+rate_limit_queue = deque(maxlen=11)
+
+#df = get_stock_historicals("AAPL", "hour", "month", logon)
+#chicago_tz = pytz.timezone('America/Chicago')
 
 logon=_1_init()
-chicago_tz = pytz.timezone('America/Chicago')
 
+from apscheduler.schedulers.background import BackgroundScheduler
+import pytz
 
-main_open_positions(logon)
+scheduler = BackgroundScheduler()
+trading_hours = pytz.timezone('US/Central')
+scheduler.add_job(main_open_positions, trigger='cron', day_of_week='mon-fri', hour='10,12,14', minute='30', timezone=trading_hours)
+scheduler.start()
 
-
+from time import sleep
+# main_open_positions() 
+# cancel_all_stockOrders()
+try:
+    # Simulate application activity
+    while True:
+        time.sleep(6)
+        logging.info(f"Handler Alive. ")
+except Exception as e: print(e)
+ 
