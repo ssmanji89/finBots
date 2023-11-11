@@ -1,61 +1,33 @@
-Flask
-Werkzeug
-waitress
 
+# Data manipulation and computation
 pandas
-pandas_ta
-statsmodels
-imblearn
-joblib
+numpy
 
-requests
-tornado
-tweepy
-python-telegram-bot
-pycrypto 
-oauthlib
-oauth2client
+# Statistical and mathematical operations
+scipy
+
+# One-Time Password library
 pyotp
-itsdangerous
 
-black
-flake8
-isort
-mypy-extensions
+# Timezone support
+pytz
 
-APScheduler
+# Robinhood API
+robin-stocks
+
+# Task scheduling
 schedule
 
-yfinance
-robin_stocks
+# Twitter API
+tweepy
 
-appdirs
-cachetools
-certifi
-chardet
-click
-discord-webhook
-idna
-Jinja2
-MarkupSafe
-mccabe
-pathspec
-pipreqs
-pycodestyle
-pyflakes
-PySocks
-regex
-requests-oauthlib
-six
-slack-webhook
-slack_sdk
-toml
-tzlocal
-urllib3
-config
+# Geographical utility
 mpu
-datetime
-gspread
-numpy
-scipy
+
+# Technical analysis
+pandas-ta
+
+apscheduler
+
 scikit-learn
+finviz
