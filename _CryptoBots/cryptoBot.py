@@ -168,7 +168,7 @@ def evaluate_macd_signals(df):
 def trade(rhSymbol, quantity, last_trade_price, logon):
     # Fetch historical data
     # buydf = get_stock_historicals(rhSymbol, "hour", "3month", logon)
-    df = buydf = get_stock_historicals(rhSymbol, "hour", "month", logon)
+    df = buydf = get_stock_historicals(rhSymbol, "day", "5year", logon)
     action = "Hold"
     # _helper_buyStock(ticker=rhSymbol, last_trade_price=last_trade_price)
     # 
