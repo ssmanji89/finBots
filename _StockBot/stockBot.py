@@ -201,7 +201,7 @@ def trade(rhSymbol, quantity, last_trade_price, pdFundementals, logon):
     # Fetch historical data
     rs.robinhood.get_stock_historicals()
     # buydf = get_stock_historicals(rhSymbol, "hour", "3month", logon)
-    df = buydf = get_stock_historicals(rhSymbol, "day", "5year", logon)
+    df = buydf = get_stock_historicals(rhSymbol, "day", "year", logon)
     pricebook = rs.robinhood.stocks.get_pricebook_by_symbol(rhSymbol)
     asks = pricebook.get("asks", [])
     bids = pricebook.get("bids", [])
