@@ -63,13 +63,12 @@ class RateLimitHandler:
                         sleep(sleep_duration)
                     return f(*args, **kwargs)
         return wrapped_f
-    
+
 def _1_init():
     cur_user, cur_pass, cur_totp_secret = fetch_env_vars()
     totp = pyotp.TOTP(cur_totp_secret).now()
     print(rs.robinhood.authentication.login(cur_user, cur_pass, mfa_code=totp))
     return
-
 
 def _helper_sellStock(ticker, quantity, last_trade_price):
     if quantity > 0.000000001:
@@ -199,7 +198,6 @@ def evaluate_macd_signals(df):
 
 def trade(rhSymbol, quantity, last_trade_price, pdFundementals, logon):
     # Fetch historical data
-    rs.robinhood.get_stock_historicals()
     # buydf = get_stock_historicals(rhSymbol, "hour", "3month", logon)
     df = buydf = get_stock_historicals(rhSymbol, "day", "year", logon)
     pricebook = rs.robinhood.stocks.get_pricebook_by_symbol(rhSymbol)
@@ -310,6 +308,7 @@ rate_limit_queue = deque(maxlen=11)
 #chicago_tz = pytz.timezone('America/Chicago')
 
 logon=_1_init()
+
 
 from apscheduler.schedulers.background import BackgroundScheduler
 import pytz
