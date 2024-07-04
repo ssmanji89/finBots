@@ -37,6 +37,9 @@ import pandas_ta as ta
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 WATCHLIST_NAMES = ["100 Most Popular", "Popular Recurring Investments", "Upcoming Earnings"]
  
+
+def cancel_all_stockOrders(): return print(rs.robinhood.cancel_all_stock_orders())
+
 class RateLimitHandler:
     def __init__(self, rate, per, allow_burst=False):
         self.rate = rate
@@ -104,152 +107,16 @@ def generate_totp(totp_secret):
 def fetch_open_positions():
     return pd.DataFrame(rs.robinhood.get_open_stock_positions())
 
+def fetchCustomWatchlist(watchlist_name):
+    watchlist_dfs = [pd.DataFrame(rs.robinhood.account.get_watchlist_by_name(name=name, info='results')) for name in [watchlist_name]]
+    return pd.concat(watchlist_dfs).drop_duplicates(subset='object_id').sort_values(by='created_at', ascending=False).fillna(value=0, axis=1)
+
 def fetch_watchlist():
     watchlist_dfs = [pd.DataFrame(rs.robinhood.account.get_watchlist_by_name(name=name, info='results')) for name in WATCHLIST_NAMES]
     return pd.concat(watchlist_dfs).drop_duplicates(subset='object_id').sort_values(by='created_at', ascending=False).fillna(value=0, axis=1)
 
 def fetch_fundamentals(rh_symbol):
     return pd.DataFrame(rs.robinhood.stocks.get_fundamentals(rh_symbol, info=None))
-
-import pandas as pd
-import numpy as np
-import pandas as pd
-import numpy as np
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_squared_error
-
-def train_model(df, features, target):
-    X = df[features]
-    y = df[target]
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
-    model = RandomForestRegressor()
-    model.fit(X_train, y_train)
-    predictions = model.predict(X_test)
-    mse = mean_squared_error(y_test, predictions)
-    print(f'Model MSE: {mse}')
-    return model
-
-
-def optimize_lookback(df, eval_metric):
-    best_metric = float('-inf')
-    best_lookback = None
-    # Iterate over a range of lookback periods to find the best one
-    for lookback in range(1, len(df) // 2):  # Adjust the range as needed
-        df['Action'] = evaluate_macd_signals(df, lookback_period=lookback)
-        current_metric = eval_metric(df['Action'], df['close_price'])
-        if current_metric > best_metric:
-            best_metric = current_metric
-            best_lookback = lookback
-    return best_lookback
-
-def calculate_volatility(df, short_window=14, long_window=252):
-    """
-    Calculate the volatility using two windows: a short window for short-term volatility
-    and a long window for long-term volatility. The 'long_window' defaults to 252, 
-    which is the typical number of trading days in a year, to capture annual volatility.
-    """
-    short_term_volatility = df['close_price'].pct_change().rolling(window=short_window).std(ddof=0)
-    long_term_volatility = df['close_price'].pct_change().rolling(window=long_window).std(ddof=0)
-    return short_term_volatility, long_term_volatility
-
-def calculate_volume_ratio(df, short_window=14, long_window=28):
-    short_vol = df['volume'].rolling(window=short_window).mean()
-    long_vol = df['volume'].rolling(window=long_window).mean()
-    return short_vol / long_vol
-
-def evaluate_macd_signals(df):
-    # Calculate volatility and volume ratio
-    df['Short_Term_Volatility'], df['Long_Term_Volatility'] = calculate_volatility(df)
-    df['Volume_Ratio'] = calculate_volume_ratio(df)
-    # Determine dynamic lookback_period based on long-term volatility
-    if df['Long_Term_Volatility'].iloc[-1] > df['Long_Term_Volatility'].median():
-        lookback_period = max(int(df['Long_Term_Volatility'].count() * 0.1), 1)  # Shorter in high volatility
-    else:
-        lookback_period = min(int(df['Long_Term_Volatility'].count() * 0.2), len(df) - 1)  # Longer in low volatility
-    # Adjust lookback_period based on volume ratio
-    if df['Volume_Ratio'].iloc[-1] > 1:
-        lookback_period = max(int(lookback_period * 0.75), 1)
-    elif df['Volume_Ratio'].iloc[-1] < 1:
-        lookback_period = min(int(lookback_period * 1.25), len(df) - 1)
-    # Select the MACD and signal line values based on the dynamic lookback_period
-    macd_line = df['MACD_3_9_7'].iloc[-lookback_period:]
-    macd_signal = df['MACDs_3_9_7'].iloc[-lookback_period:]
-    macd_histogram = df['MACDh_3_9_7'].iloc[-lookback_period:]
-    # Initialize the action as 'Hold'
-    action = 'Hold'
-    # Check for Sell signal
-    if (macd_line.iloc[-1] < macd_signal.iloc[-1] and
-        macd_line.iloc[-2] > macd_signal.iloc[-2] and
-        all(macd_histogram > 0) and
-        macd_histogram.iloc[-1] < 0 and
-        df['RSI_2'].iloc[-1] > 70 and df['RSI_9'].iloc[-1] > 65):
-        action = 'Sell'
-    # Check for Buy signal
-    elif (macd_line.iloc[-1] > macd_signal.iloc[-1] and
-          macd_line.iloc[-2] < macd_signal.iloc[-2] and
-          all(macd_histogram < 0) and
-          macd_histogram.iloc[-1] > 0 and
-          df['RSI_2'].iloc[-1] < 30 and df['RSI_9'].iloc[-1] < 55):
-        action = 'Buy'
-    # Return the action recommendation
-    return action
-
-
-def trade(rhSymbol, quantity, last_trade_price, pdFundementals, logon):
-    # Fetch historical data
-    # buydf = get_stock_historicals(rhSymbol, "hour", "3month", logon)
-    df = buydf = get_stock_historicals(rhSymbol, "day", "year", logon)
-    pricebook = rs.robinhood.stocks.get_pricebook_by_symbol(rhSymbol)
-    asks = pricebook.get("asks", [])
-    bids = pricebook.get("bids", [])
-    action = "Hold"
-    # _helper_buyStock(ticker=rhSymbol, last_trade_price=last_trade_price)
-    # 
-    # Apply the function to the DataFrame with a specified lookback period
-    trading_action = evaluate_macd_signals(df)
-    if (trading_action == 'Sell'): 
-        _helper_sellStock(ticker=rhSymbol, quantity=quantity, last_trade_price=last_trade_price)
-        message = f"Recommended action: {trading_action} for {rhSymbol}. "; 
-        logging.info(message)
-    elif (trading_action == 'Buy'): 
-        _helper_buyStock(ticker=rhSymbol, last_trade_price=last_trade_price) 
-        message = f"Recommended action: {trading_action} for {rhSymbol}. "; 
-        logging.info(message)
-    else: 
-        message = f"Recommended action: {trading_action} for {rhSymbol}. "; 
-        logging.info(message)
-    return action
-
-def main_open_positions():
-    logon=_1_init()
-    try:
-        open_positions = fetch_open_positions()
-        full_watchlist = fetch_watchlist()
-        merged_df = full_watchlist.merge(open_positions, left_on='object_id', right_on='instrument_id', how='left')
-        all_data = []
-        for index, row in merged_df.iterrows():
-            try:
-                # Extract common data fields
-                instrument_id = row.get('object_id') or row.get('instrument_id')
-                instrument = row.get('id')
-                quantity = float(row.get('open_positions') or row.get('quantity'))
-                average_buy_price = float(row.get('price') or row.get('average_buy_price'))
-                # Fetch additional data
-                stock_quote = rs.robinhood.get_stock_quote_by_id(instrument_id)
-                last_trade_price = float(stock_quote.get('last_trade_price'))
-                previous_close = float(stock_quote.get('previous_close'))
-                rh_symbol = str(stock_quote.get('symbol'))
-                fundamentals = pd.DataFrame() # fetch_fundamentals(rh_symbol)
-                threading.Thread(target=trade, args=(rh_symbol, quantity, last_trade_price, fundamentals, logon)).start()
-                # trade(rh_symbol, quantity, last_trade_price, fundamentals, logon)
-                # trade_backtest(hr_df, day_df, fundamentals, rh_symbol, last_trade_price)
-            except Exception as e:
-                logging.error(f"Error processing row {index}: {e}")
-        logging.info("Completed processing all rows.")
-    except Exception as e:
-        logging.error(f"An error occurred in main_open_positions: {e}")
-        exit
 
 
 def get_stock_historicals(rhSymbol, interval, span, logon):
@@ -277,14 +144,10 @@ def get_stock_historicals(rhSymbol, interval, span, logon):
         except: pass
         try: df = df.join(ta.ema(close=df['close_price'], length=70))
         except: pass
-        try: df = df.join(ta.sma(close=df['close_price'], length=200))
-        except: pass
-        try: df = df.join(ta.sma(close=df['close_price'], length=100))
-        except: pass
         try: df = df.join(ta.sma(close=df['close_price'], length=50))
         except: pass
         df = df.join(ta.adx(high=df['high_price'], low=df['low_price'], close=df['close_price'], length=3))
-        df = df.join(ta.macd(close=df['close_price'], fast=3, slow=9, signal=7))
+        df = df.join(ta.macd(close=df['close_price'], fast=12, slow=26, signal=9))
         df = df.join(ta.psar(high=df['high_price'], low=df['low_price'], close=df['close_price']))
         df = df.join(ta.bbands(close=df['close_price'], length=5))
         df = df.join(ta.atr(high=df['high_price'], low=df['low_price'], close=df['close_price'], length=14))
@@ -292,13 +155,242 @@ def get_stock_historicals(rhSymbol, interval, span, logon):
         # replace any NaN values with 0
         df = df.fillna(value=0,axis=1)
         # cast prices into float type
-        df[['open_price','close_price','high_price','low_price','volume','MOM_2','RSI_2','EMA_2','MOM_3','RSI_3','EMA_3','MOM_5','RSI_5','EMA_5','MOM_7','RSI_7','EMA_7','MOM_9','RSI_9','EMA_9','MOM_14','RSI_14','EMA_14','EMA_20','EMA_50','EMA_70','SMA_200','SMA_100','SMA_50','ADX_3','DMP_3','DMN_3','MACD_3_9_7','MACDh_3_9_7','MACDs_3_9_7','PSARl_0.02_0.2','PSARs_0.02_0.2','PSARaf_0.02_0.2','PSARr_0.02_0.2','BBL_5_2.0','BBM_5_2.0','BBU_5_2.0','BBB_5_2.0','BBP_5_2.0','ATRr_14','KCLe_3_2','KCBe_3_2','KCUe_3_2']] = df[['open_price','close_price','high_price','low_price','volume','MOM_2','RSI_2','EMA_2','MOM_3','RSI_3','EMA_3','MOM_5','RSI_5','EMA_5','MOM_7','RSI_7','EMA_7','MOM_9','RSI_9','EMA_9','MOM_14','RSI_14','EMA_14','EMA_20','EMA_50','EMA_70','SMA_200','SMA_100','SMA_50','ADX_3','DMP_3','DMN_3','MACD_3_9_7','MACDh_3_9_7','MACDs_3_9_7','PSARl_0.02_0.2','PSARs_0.02_0.2','PSARaf_0.02_0.2','PSARr_0.02_0.2','BBL_5_2.0','BBM_5_2.0','BBU_5_2.0','BBB_5_2.0','BBP_5_2.0','ATRr_14','KCLe_3_2','KCBe_3_2','KCUe_3_2']].astype(float)
+        # List of all potential columns for conversion
+        potential_columns = ['open_price', 'close_price', 'high_price', 'low_price', 'volume', 
+                            'MOM_2', 'RSI_2', 'EMA_2', 'MOM_3', 'RSI_3', 'EMA_3', 'MOM_5', 'RSI_5', 'EMA_5', 
+                            'MOM_7', 'RSI_7', 'EMA_7', 'MOM_9', 'RSI_9', 'EMA_9', 'MOM_14', 'RSI_14', 'EMA_14', 
+                            'EMA_20', 'EMA_50', 'EMA_70', 'SMA_50', 'ADX_3', 'DMP_3', 'DMN_3', 
+                            'MACD_12_26_9', 'MACDh_12_26_9', 'MACDs_12_26_9', 'PSARl_0.02_0.2', 'PSARs_0.02_0.2', 
+                            'PSARaf_0.02_0.2', 'PSARr_0.02_0.2', 'BBL_5_2.0', 'BBM_5_2.0', 'BBU_5_2.0', 
+                            'BBB_5_2.0', 'BBP_5_2.0', 'ATRr_14', 'KCLe_3_2', 'KCBe_3_2', 'KCUe_3_2']
+        # Filter the list to include only columns that exist in the DataFrame
+        columns_to_convert = [col for col in potential_columns if col in df.columns]
+        # Perform the type conversion on the filtered list of columns
+        df[columns_to_convert] = df[columns_to_convert].astype(float)
     except Exception as e:
         logging.error(f"Error performing calculations: {e}")
         return
     return df
 
-def cancel_all_stockOrders(): return print(rs.robinhood.cancel_all_stock_orders())
+
+def analyze_stock(rhSymbol, df, risk_tolerance=0.02):
+    import pandas as pd
+    import numpy as np
+    from datetime import datetime
+    import logging
+    """
+    Analyze stock data focusing on trend following for capital appreciation and limiting losses.
+    
+    :param rhSymbol: str, Robinhood symbol for the stock
+    :param df: DataFrame containing historical stock data and technical indicators
+    :param risk_tolerance: float, maximum allowed loss as a fraction of position value
+    :return: dict, containing 'action' (Buy, Sell, or Hold) and 'stop_loss' price
+    """
+    try:
+        # Define possible column names for each indicator
+        column_mappings = {
+            'EMA_9': ['EMA_9', 'EMA_10'],
+            'EMA_20': ['EMA_20', 'EMA_21'],
+            'EMA_50': ['EMA_50', 'EMA_55'],
+            'EMA_200': ['EMA_200', 'SMA_200'],
+            'RSI_14': ['RSI_14', 'RSI_13', 'RSI_15'],
+            'ADX_14': ['ADX_14', 'ADX_13', 'ADX_15', 'ADX_3'],
+            'MACD_12_26_9': ['MACD_12_26_9', 'MACD'],
+            'MACDs_12_26_9': ['MACDs_12_26_9', 'MACDs'],
+            'BBL_20_2.0': ['BBL_20_2.0', 'BBL_5_2.0', 'BBL'],
+            'BBM_20_2.0': ['BBM_20_2.0', 'BBM_5_2.0', 'BBM'],
+            'BBU_20_2.0': ['BBU_20_2.0', 'BBU_5_2.0', 'BBU']
+        }
+
+        # Function to get the first available column from the mapping
+        def get_column(mapping):
+            return next((col for col in mapping if col in df.columns), None)
+
+        # Ensure all relevant columns are float type
+        float_columns = ['open_price', 'close_price', 'high_price', 'low_price', 'volume']
+        float_columns.extend([get_column(mapping) for mapping in column_mappings.values() if get_column(mapping)])
+
+        for col in float_columns:
+            if col in df.columns:
+                df[col] = df[col].astype(float)
+
+        action = "Hold"
+        current_time = datetime.now().strftime('%B %d, %Y')
+        message = f"{current_time}; {action} {rhSymbol}: "
+
+        if len(df) < 200:
+            return {"action": "Hold", "stop_loss": None, "message": "Insufficient data for analysis"}
+
+        latest = df.iloc[-1]
+        
+        # 1. Trend Analysis
+        ema_9 = get_column(column_mappings['EMA_9'])
+        ema_20 = get_column(column_mappings['EMA_20'])
+        ema_50 = get_column(column_mappings['EMA_50'])
+        ema_200 = get_column(column_mappings['EMA_200'])
+
+        short_term_trend = ema_9 and ema_20 and latest[ema_9] > latest[ema_20]
+        medium_term_trend = ema_20 and ema_50 and latest[ema_20] > latest[ema_50]
+        long_term_trend = ema_50 and ema_200 and latest[ema_50] > latest[ema_200]
+
+        # 2. Momentum
+        rsi_col = get_column(column_mappings['RSI_14'])
+        rsi = latest[rsi_col] if rsi_col else None
+        
+        # 3. Trend Strength
+        adx_col = get_column(column_mappings['ADX_14'])
+        adx = latest[adx_col] if adx_col else None
+
+        # 4. MACD
+        macd_col = get_column(column_mappings['MACD_12_26_9'])
+        signal_col = get_column(column_mappings['MACDs_12_26_9'])
+        if macd_col and signal_col:
+            macd_line = latest[macd_col]
+            signal_line = latest[signal_col]
+            macd_histogram = macd_line - signal_line
+        else:
+            macd_line = signal_line = macd_histogram = None
+
+        # 5. Bollinger Bands
+        bbl_col = get_column(column_mappings['BBL_20_2.0'])
+        bbm_col = get_column(column_mappings['BBM_20_2.0'])
+        bbu_col = get_column(column_mappings['BBU_20_2.0'])
+        lower_bb = latest[bbl_col] if bbl_col else None
+        middle_bb = latest[bbm_col] if bbm_col else None
+        upper_bb = latest[bbu_col] if bbu_col else None
+
+        # 6. Volume
+        volume_sma = df['volume'].rolling(window=20).mean().iloc[-1]
+        volume_trend = latest['volume'] > volume_sma * 1.5
+
+        # Decision Making
+        buy_signals = 0
+        sell_signals = 0
+
+        # Trend signals
+        if short_term_trend and medium_term_trend and long_term_trend:
+            buy_signals += 1
+        elif not short_term_trend and not medium_term_trend and not long_term_trend:
+            sell_signals += 1
+
+        # RSI signals
+        if rsi is not None:
+            if rsi < 30:
+                buy_signals += 1
+            elif rsi > 70:
+                sell_signals += 1
+
+        # ADX signal
+        if adx is not None and adx > 25:
+            if short_term_trend and medium_term_trend:
+                buy_signals += 1
+            elif not short_term_trend and not medium_term_trend:
+                sell_signals += 1
+
+        # MACD signals
+        if macd_line is not None and signal_line is not None:
+            if macd_line > signal_line and macd_histogram > 0:
+                buy_signals += 1
+            elif macd_line < signal_line and macd_histogram < 0:
+                sell_signals += 1
+
+        # Bollinger Bands signals
+        if lower_bb is not None and upper_bb is not None:
+            if latest['close_price'] < lower_bb:
+                buy_signals += 1
+            elif latest['close_price'] > upper_bb:
+                sell_signals += 1
+
+        # Volume confirmation
+        if volume_trend:
+            if buy_signals > sell_signals:
+                buy_signals += 1
+            elif sell_signals > buy_signals:
+                sell_signals += 1
+
+        # Final decision
+        if buy_signals >= 3 and buy_signals > sell_signals:
+            action = "Buy"
+            stop_loss = lower_bb if lower_bb else latest['close_price'] * (1 - risk_tolerance)
+            message = f"{current_time}; {action} {rhSymbol}: Multiple buy signals detected; stop loss at {stop_loss:.2f}"
+            logging.info(message)
+            post_message_to_moneyBots_stockls(message)
+            threading.Thread(target=execute_stock_buy_order, args=(rhSymbol, stop_loss, 1.11)).start()
+        elif sell_signals >= 3 and sell_signals > buy_signals:
+            action = "Sell"
+            message = f"{current_time}; {action} {rhSymbol}: Multiple sell signals detected"
+            logging.info(message)
+        else:
+            message = f"{current_time}; Hold {rhSymbol}: No clear direction"
+            logging.info(message)
+        return {"action": action, "stop_loss": stop_loss if action == "Buy" else None, "message": message}
+    except Exception as e:
+        error_message = f"Error in analyze_stock for {rhSymbol}: {str(e)}"
+        logging.error(error_message)
+        return {"action": "Hold", "stop_loss": None, "message": error_message}
+
+# The rest of the code (get_stock_recommendation, etc.) remains the same
+def get_stock_recommendation(rhSymbol, interval, span, logon, risk_tolerance=0.05):
+    """
+    Get a stock recommendation based on trend following and risk management.
+    
+    :param rhSymbol: str, Robinhood symbol for the stock
+    :param interval: str, time interval for historical data
+    :param span: str, time span for historical data
+    :param logon: object, Robinhood logon instance
+    :param risk_tolerance: float, maximum allowed loss as a fraction of position value
+    :return: dict, containing 'action' (Buy, Sell, or Hold), 'stop_loss' price, and 'message'
+    """
+    try:
+        df = get_stock_historicals(rhSymbol, interval, span, logon)
+        
+        if df is None or df.empty:
+            return {"action": "Hold", "stop_loss": None, "message": "Insufficient data"}
+        
+        recommendation = analyze_stock(rhSymbol, df, risk_tolerance)    
+        return recommendation
+    
+    except Exception as e:
+        error_message = f"Error in get_stock_recommendation for {rhSymbol}: {str(e)}"
+        logging.error(error_message)
+        return {"action": "Hold", "stop_loss": None, "message": error_message}
+
+
+def main_open_positions():
+    logon=_1_init()
+    try:
+        open_positions = fetch_open_positions()
+        # full_watchlist = fetch_watchlist()
+        watchlist_name = "sullysDividendList"
+        full_watchlist = fetchCustomWatchlist(watchlist_name)
+        merged_df = full_watchlist.merge(open_positions, left_on='object_id', right_on='instrument_id', how='left')
+        all_data = []
+        for index, row in merged_df.iterrows():
+            try:
+                # Extract common data fields
+                instrument_id = row.get('object_id') or row.get('instrument_id')
+                instrument = row.get('id')
+                quantity = float(row.get('open_positions') or row.get('quantity'))
+                average_buy_price = float(row.get('price') or row.get('average_buy_price'))
+                # Fetch additional data
+                stock_quote = rs.robinhood.get_stock_quote_by_id(instrument_id)
+                last_trade_price = float(stock_quote.get('last_trade_price'))
+                previous_close = float(stock_quote.get('previous_close'))
+                rh_symbol = str(stock_quote.get('symbol'))
+                fundamentals = pd.DataFrame() # fetch_fundamentals(rh_symbol)
+                threading.Thread(target=get_stock_recommendation, args=(rh_symbol, "day", "year", logon, 0.05)).start()
+                # trade(rh_symbol, quantity, last_trade_price, fundamentals, logon)
+                # trade_backtest(hr_df, day_df, fundamentals, rh_symbol, last_trade_price)
+            except Exception as e:
+                logging.error(f"Error processing row {index}: {e}")
+        logging.info("Completed processing all rows.")
+    except Exception as e:
+        logging.error(f"An error occurred in main_open_positions: {e}")
+        exit
+
+
+
+
 
 
 # Initialize the rate limit queue
