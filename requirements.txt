@@ -1,0 +1,98 @@
+
+# Data manipulation and computation
+pandas
+numpy
+
+# Statistical and mathematical operations
+scipy
+
+# One-Time Password library
+pyotp
+
+# Timezone support
+pytz
+
+# Robinhood API
+robin-stocks
+
+finvizfinance
+
+# Task scheduling
+schedule
+
+# Twitter API
+tweepy
+
+# Geographical utility
+mpu
+
+# Technical analysis
+pandas-ta
+statsmodels
+apscheduler
+
+scikit-learn
+finviz
+flask
+ccxt
+config
+aiodns
+aiohttp
+aiosignal
+async-timeout
+attrs
+certifi
+cffi
+charset-normalizer
+click
+colorama
+cryptography
+frozenlist
+idna
+# itsdangerous
+Jinja2
+MarkupSafe
+multidict
+pycares
+pycparser
+requests
+typing-extensions
+urllib3
+Werkzeug
+yarl
+jsonify
+gunicorn
+discord-webhook
+pendulum
+jsonschema
+
+aiodns
+aiohttp
+aiosignal
+async-timeout
+attrs
+ccxt
+certifi
+cffi
+charset-normalizer
+click
+colorama
+cryptography
+Flask
+frozenlist
+idna
+itsdangerous
+Jinja2
+MarkupSafe
+multidict
+pycares
+pycparser
+requests
+typing-extensions
+urllib3
+Werkzeug
+yarl
+yfinance
+openai
+pmdarima
+arch
